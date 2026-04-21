@@ -41,6 +41,10 @@ try:
         st.dataframe(df)
         st.write(f"Dataset Shape: {df.shape}")
     
+    # Store original categorical values for later use
+    categorical_mappings = {}
+    original_categories = {}
+    
     # Data preprocessing
     st.header("🔧 Data Preprocessing")
     
@@ -57,13 +61,30 @@ try:
     duplicate_rows = df[df.duplicated()]
     st.write(f"Number of duplicate rows: {duplicate_rows.shape[0]}")
     
-    # Label Encoding
+    # Store original categorical values and create label encoders
     categorical_cols = df.select_dtypes(include='object').columns
+    label_encoders = {}
+    
     for col in categorical_cols:
+        # Store unique values for later use in UI
+        original_categories[col] = df[col].unique().tolist()
+        
+        # Create and fit label encoder
         le = LabelEncoder()
         df[col] = le.fit_transform(df[col])
+        label_encoders[col] = le
+        
+        # Store mapping for display
+        mapping_dict = dict(zip(le.classes_, le.transform(le.classes_)))
+        categorical_mappings[col] = mapping_dict
     
-    st.write("✅ Categorical variables encoded")
+    if categorical_cols:
+        st.write(f"✅ Categorical variables encoded: {', '.join(categorical_cols)}")
+        with st.expander("View Encoding Mappings"):
+            for col, mapping in categorical_mappings.items():
+                st.write(f"**{col}:**")
+                for original, encoded in mapping.items():
+                    st.write(f"  {original} → {encoded}")
     
     # Prepare features and target
     X = df.drop('Salary', axis=1)
@@ -183,7 +204,9 @@ try:
     best_model_obj = models[best_model]
     with open('best_model.pkl', 'wb') as f:
         pickle.dump(best_model_obj, f)
-    st.write("✅ Best model saved as 'best_model.pkl'")
+    with open('label_encoders.pkl', 'wb') as f:
+        pickle.dump(label_encoders, f)
+    st.write("✅ Best model and label encoders saved")
     
     # Visualization
     st.header("📊 Visualization")
@@ -210,8 +233,8 @@ try:
         st.pyplot(fig2)
     
     # Feature importance for Random Forest
-    st.subheader("🔍 Feature Importance (Random Forest)")
     if 'Random Forest' in models:
+        st.subheader("🔍 Feature Importance (Random Forest)")
         rf_model = models['Random Forest']
         feature_importance = pd.DataFrame({
             'Feature': X.columns,
@@ -227,35 +250,67 @@ try:
     st.header("🎯 Make a Prediction")
     st.write("Use the trained models to predict salary based on input features")
     
-    # Create input fields for each feature
+    # Create input fields with appropriate types
     col1, col2 = st.columns(2)
     input_data = {}
     
     for i, feature in enumerate(X.columns):
-        if i % 2 == 0:
-            with col1:
-                input_data[feature] = st.number_input(f"Enter {feature}", value=float(X[feature].mean()))
+        # Check if this feature was originally categorical
+        if feature in categorical_cols:
+            # Create dropdown with original category names
+            with col1 if i % 2 == 0 else col2:
+                selected_category = st.selectbox(
+                    f"Select {feature}",
+                    options=original_categories[feature],
+                    key=f"select_{feature}"
+                )
+                # Encode the selected value
+                input_data[feature] = label_encoders[feature].transform([selected_category])[0]
+                # Show the encoded value in a small text (optional)
+                st.caption(f"Encoded value: {input_data[feature]}")
         else:
-            with col2:
-                input_data[feature] = st.number_input(f"Enter {feature}", value=float(X[feature].mean()))
+            # Numeric field
+            with col1 if i % 2 == 0 else col2:
+                input_data[feature] = st.number_input(
+                    f"Enter {feature}",
+                    value=float(X[feature].mean()),
+                    key=f"num_{feature}"
+                )
     
     # Model selection for prediction
     selected_model_name = st.selectbox("Select Model for Prediction", list(models.keys()))
     selected_model = models[selected_model_name]
     
-    if st.button("Predict Salary"):
+    if st.button("🔮 Predict Salary", type="primary"):
         input_df = pd.DataFrame([input_data])
         prediction = selected_model.predict(input_df)
-        st.success(f"💰 Predicted Salary: **${prediction[0]:,.2f}**")
+        
+        # Display prediction with nice formatting
+        st.balloons()
+        st.success(f"### 💰 Predicted Salary: **${prediction[0]:,.2f}**")
         
         # Show confidence based on R2 score
         model_r2 = metrics_df[metrics_df['Model'] == selected_model_name]['R2 Score'].values[0]
-        st.info(f"Model Confidence (R² Score): {model_r2:.2%}")
+        confidence_level = "High" if model_r2 > 0.8 else "Medium" if model_r2 > 0.6 else "Low"
+        st.info(f"📊 **Model Confidence:** {confidence_level} (R² Score: {model_r2:.2%})")
+        
+        # Show input summary
+        with st.expander("View Input Summary"):
+            st.write("**Your Input Values:**")
+            for feature, value in input_data.items():
+                if feature in categorical_cols:
+                    # Decode back to original value for display
+                    original_value = label_encoders[feature].inverse_transform([int(value)])[0]
+                    st.write(f"- {feature}: {original_value} (encoded: {value})")
+                else:
+                    st.write(f"- {feature}: {value:,.2f}")
 
 except FileNotFoundError:
     st.error("❌ Salary_Data.csv file not found! Please make sure the file is in the same directory.")
+    import os
     st.write("Current working directory:", os.getcwd())
     st.write("Files in directory:", os.listdir('.'))
 
 except Exception as e:
     st.error(f"An error occurred: {str(e)}")
+    st.write("Please check your data file format and try again.")
