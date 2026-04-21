@@ -62,7 +62,7 @@ try:
     st.write(f"Number of duplicate rows: {duplicate_rows.shape[0]}")
     
     # Store original categorical values and create label encoders
-    categorical_cols = df.select_dtypes(include='object').columns
+    categorical_cols = df.select_dtypes(include='object').columns.tolist()  # Convert to list
     label_encoders = {}
     
     for col in categorical_cols:
@@ -254,9 +254,12 @@ try:
     col1, col2 = st.columns(2)
     input_data = {}
     
-    for i, feature in enumerate(X.columns):
+    # Get list of feature names
+    feature_names = X.columns.tolist()
+    
+    for i, feature in enumerate(feature_names):
         # Check if this feature was originally categorical
-        if feature in categorical_cols:
+        if feature in categorical_cols:  # Now categorical_cols is a list, not an Index
             # Create dropdown with original category names
             with col1 if i % 2 == 0 else col2:
                 selected_category = st.selectbox(
@@ -274,7 +277,8 @@ try:
                 input_data[feature] = st.number_input(
                     f"Enter {feature}",
                     value=float(X[feature].mean()),
-                    key=f"num_{feature}"
+                    key=f"num_{feature}",
+                    format="%.2f"
                 )
     
     # Model selection for prediction
@@ -282,28 +286,31 @@ try:
     selected_model = models[selected_model_name]
     
     if st.button("🔮 Predict Salary", type="primary"):
-        input_df = pd.DataFrame([input_data])
-        prediction = selected_model.predict(input_df)
-        
-        # Display prediction with nice formatting
-        st.balloons()
-        st.success(f"### 💰 Predicted Salary: **${prediction[0]:,.2f}**")
-        
-        # Show confidence based on R2 score
-        model_r2 = metrics_df[metrics_df['Model'] == selected_model_name]['R2 Score'].values[0]
-        confidence_level = "High" if model_r2 > 0.8 else "Medium" if model_r2 > 0.6 else "Low"
-        st.info(f"📊 **Model Confidence:** {confidence_level} (R² Score: {model_r2:.2%})")
-        
-        # Show input summary
-        with st.expander("View Input Summary"):
-            st.write("**Your Input Values:**")
-            for feature, value in input_data.items():
-                if feature in categorical_cols:
-                    # Decode back to original value for display
-                    original_value = label_encoders[feature].inverse_transform([int(value)])[0]
-                    st.write(f"- {feature}: {original_value} (encoded: {value})")
-                else:
-                    st.write(f"- {feature}: {value:,.2f}")
+        try:
+            input_df = pd.DataFrame([input_data])
+            prediction = selected_model.predict(input_df)
+            
+            # Display prediction with nice formatting
+            st.balloons()
+            st.success(f"### 💰 Predicted Salary: **${prediction[0]:,.2f}**")
+            
+            # Show confidence based on R2 score
+            model_r2 = metrics_df[metrics_df['Model'] == selected_model_name]['R2 Score'].values[0]
+            confidence_level = "High" if model_r2 > 0.8 else "Medium" if model_r2 > 0.6 else "Low"
+            st.info(f"📊 **Model Confidence:** {confidence_level} (R² Score: {model_r2:.2%})")
+            
+            # Show input summary
+            with st.expander("View Input Summary"):
+                st.write("**Your Input Values:**")
+                for feature, value in input_data.items():
+                    if feature in categorical_cols:
+                        # Decode back to original value for display
+                        original_value = label_encoders[feature].inverse_transform([int(value)])[0]
+                        st.write(f"- {feature}: {original_value} (encoded: {value})")
+                    else:
+                        st.write(f"- {feature}: {value:,.2f}")
+        except Exception as e:
+            st.error(f"Error making prediction: {str(e)}")
 
 except FileNotFoundError:
     st.error("❌ Salary_Data.csv file not found! Please make sure the file is in the same directory.")
