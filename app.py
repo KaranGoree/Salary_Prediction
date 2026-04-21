@@ -292,7 +292,7 @@ try:
             
             # Display prediction with nice formatting
             st.balloons()
-            st.success(f"### 💰 Predicted Salary: **${prediction[0]:,.2f}**")
+            st.success(f"### 💰 Predicted Salary: **{prediction[0]:,.2f}**")
             
             # Show confidence based on R2 score
             model_r2 = metrics_df[metrics_df['Model'] == selected_model_name]['R2 Score'].values[0]
